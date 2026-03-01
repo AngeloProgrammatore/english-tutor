@@ -4,10 +4,10 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 const WELCOME_MESSAGE = {
   role: 'assistant',
-  content: `ð¬ COMMENTO:
-Ciao! ð Sono SpeakEasy, il tuo insegnante di inglese! Sono qui per chiacchierare con te, correggere i tuoi errori e aiutarti a migliorare â il tutto divertendoci!
+  content: `💬 COMMENTO:
+Ciao! 👋 Sono SpeakEasy, il tuo insegnante di inglese! Sono qui per chiacchierare con te, correggere i tuoi errori e aiutarti a migliorare — il tutto divertendoci!
 
-â ORA PROVA:
+❓ ORA PROVA:
 What is your name and what do you like to do? (Come ti chiami e cosa ti piace fare?)`,
 };
 
@@ -96,7 +96,7 @@ export default function Home() {
     } catch {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: 'ð¬ COMMENTO:\nOops, qualcosa Ã¨ andato storto. Riprova!' },
+        { role: 'assistant', content: '💬 COMMENTO:\nOops, qualcosa è andato storto. Riprova!' },
       ]);
     } finally {
       setIsLoading(false);
@@ -126,7 +126,6 @@ export default function Home() {
 
       if (event.results[0].isFinal) {
         setIsListening(false);
-        sendMessage(transcript);
       }
     };
 
@@ -147,32 +146,32 @@ export default function Home() {
       const trimmedLine = line.trim();
       if (!trimmedLine) continue;
 
-      if (trimmedLine.startsWith('âï¸') || trimmedLine.startsWith('ð¯')) {
+      if (trimmedLine.startsWith('✏️') || trimmedLine.startsWith('🎯')) {
         currentSection = { type: 'correction', lines: [] };
         sections.push(currentSection);
-        const rest = trimmedLine.replace(/^[âï¸ð¯]\s*CORR\w+:?\s*/i, '').trim();
+        const rest = trimmedLine.replace(/^[✏️🎯]\s*CORR\w+:?\s*/i, '').trim();
         if (rest) currentSection.lines.push(rest);
-      } else if (trimmedLine.startsWith('ð')) {
+      } else if (trimmedLine.startsWith('📝')) {
         if (currentSection?.type === 'correction') {
           currentSection.lines.push(trimmedLine);
         }
-      } else if (trimmedLine.startsWith('â')) {
+      } else if (trimmedLine.startsWith('✅')) {
         if (currentSection?.type === 'correction') {
           currentSection.lines.push(trimmedLine);
         }
-      } else if (trimmedLine.startsWith('ð®ð¹')) {
+      } else if (trimmedLine.startsWith('🇮🇹')) {
         if (currentSection?.type === 'correction') {
           currentSection.lines.push(trimmedLine);
         }
-      } else if (trimmedLine.startsWith('ð¬')) {
+      } else if (trimmedLine.startsWith('💬')) {
         currentSection = { type: 'response', lines: [] };
         sections.push(currentSection);
-        const rest = trimmedLine.replace(/^ð¬\s*(?:COMMENTO|MY RESPONSE):?\s*/i, '').trim();
+        const rest = trimmedLine.replace(/^💬\s*(?:COMMENTO|MY RESPONSE):?\s*/i, '').trim();
         if (rest) currentSection.lines.push(rest);
-      } else if (trimmedLine.startsWith('â')) {
+      } else if (trimmedLine.startsWith('❓')) {
         currentSection = { type: 'question', lines: [] };
         sections.push(currentSection);
-        const rest = trimmedLine.replace(/^â\s*(?:ORA PROVA|NEXT QUESTION):?\s*/i, '').trim();
+        const rest = trimmedLine.replace(/^❓\s*(?:ORA PROVA|NEXT QUESTION):?\s*/i, '').trim();
         if (rest) currentSection.lines.push(rest);
       } else if (currentSection) {
         currentSection.lines.push(trimmedLine);
@@ -191,32 +190,32 @@ export default function Home() {
         return (
           <div key={i} style={styles.sectionCorrection}>
             <div style={styles.sectionHeader}>
-              <span style={styles.sectionIcon}>âï¸</span>
+              <span style={styles.sectionIcon}>✏️</span>
               <span style={styles.sectionLabel}>Correzione</span>
             </div>
             {section.lines.map((l, j) => {
-              if (l.startsWith('ð'))
+              if (l.startsWith('📝'))
                 return (
                   <p key={j} style={styles.corrOriginal}>
-                    {l.replace(/^ð\s*(?:HAI DETTO|YOU SAID):?\s*/i, 'ð ')}
+                    {l.replace(/^📝\s*(?:HAI DETTO|YOU SAID):?\s*/i, '📝 ')}
                   </p>
                 );
-              if (l.startsWith('â'))
+              if (l.startsWith('✅'))
                 return (
                   <p key={j} style={styles.corrFixed}>
-                    {l.replace(/^â\s*CORR\w+:?\s*/i, 'â ')}
+                    {l.replace(/^✅\s*CORR\w+:?\s*/i, '✅ ')}
                   </p>
                 );
-              if (l.startsWith('ð®ð¹'))
+              if (l.startsWith('🇮🇹'))
                 return (
                   <p key={j} style={styles.corrItalian}>
-                    {l.replace(/^ð®ð¹\s*(?:TRADUZIONE|ITALIANO):?\s*/i, 'ð®ð¹ ')}
+                    {l.replace(/^🇮🇹\s*(?:TRADUZIONE|ITALIANO):?\s*/i, '🇮🇹 ')}
                   </p>
                 );
               if (l.toLowerCase().includes('perfett') || l.toLowerCase().includes('nessun errore'))
                 return (
                   <p key={j} style={styles.corrPerfect}>
-                    â¨ {l}
+                    ✨ {l}
                   </p>
                 );
               return (
@@ -234,7 +233,7 @@ export default function Home() {
         return (
           <div key={i} style={styles.sectionQuestion}>
             <div style={styles.sectionHeader}>
-              <span style={styles.sectionIcon}>â</span>
+              <span style={styles.sectionIcon}>❓</span>
               <span style={styles.sectionLabel}>Ora prova!</span>
             </div>
             <p style={styles.questionText}>{content}</p>
@@ -246,7 +245,7 @@ export default function Home() {
       return (
         <div key={i} style={styles.sectionResponse}>
           <div style={styles.sectionHeader}>
-            <span style={styles.sectionIcon}>ð¬</span>
+            <span style={styles.sectionIcon}>💬</span>
             <span style={styles.sectionLabel}>Il tuo prof</span>
           </div>
           {content && <p style={styles.responseText}>{content}</p>}
@@ -269,7 +268,7 @@ export default function Home() {
       <header style={styles.header}>
         <div style={styles.headerInner}>
           <div style={styles.logoArea}>
-            <div style={styles.logoIcon}>ð</div>
+            <div style={styles.logoIcon}>📚</div>
             <div>
               <h1 style={styles.logoTitle}>SpeakEasy</h1>
               <p style={styles.logoSub}>Il tuo prof di inglese AI</p>
@@ -389,7 +388,7 @@ export default function Home() {
           {isListening && (
             <div style={styles.listeningBar}>
               <div style={styles.pulseRing} />
-              <span style={styles.listeningText}>ðï¸ Sto ascoltando... parla in inglese</span>
+              <span style={styles.listeningText}>🎙️ Sto ascoltando... parla in inglese</span>
             </div>
           )}
         </div>
