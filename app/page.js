@@ -4,17 +4,18 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 const WELCOME_MESSAGE = {
   role: 'assistant',
-  content: `ð¬ MY RESPONSE:
-Hey there! ð I'm SpeakEasy, your English conversation buddy! I'm here to chat with you, correct your mistakes, and help you sound more natural â all while having fun!
+  content: `ð¬ COMMENTO:
+Ciao! ð Sono SpeakEasy, il tuo insegnante di inglese! Sono qui per chiacchierare con te, correggere i tuoi errori e aiutarti a migliorare â il tutto divertendoci!
 
-â NEXT QUESTION:
-So, tell me â what topic are you into? Movies, travel, food, sports, tech, music? Pick anything and let's dive in! ð`,
+â ORA PROVA:
+What is your name and what do you like to do? (Come ti chiami e cosa ti piace fare?)`,
 };
 
 export default function Home() {
   const [messages, setMessages] = useState([WELCOME_MESSAGE]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
   const chatEndRef = useRef(null);
@@ -28,7 +29,7 @@ export default function Home() {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, streamingText]);
 
   const autoResize = useCallback(() => {
     const ta = textareaRef.current;
@@ -48,6 +49,7 @@ export default function Home() {
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setIsLoading(true);
+    setStreamingText('');
 
     try {
       const apiMessages = newMessages
@@ -60,22 +62,45 @@ export default function Home() {
         body: JSON.stringify({ messages: apiMessages }),
       });
 
-      const data = await res.json();
-      if (data.reply) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: 'â ï¸ Oops, something went wrong. Try again!' },
-        ]);
+      if (!res.ok) throw new Error('API error');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n').filter(l => l.trim());
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') break;
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.content) {
+                fullText += parsed.content;
+                setStreamingText(fullText);
+              }
+            } catch {}
+          }
+        }
+      }
+
+      if (fullText) {
+        setMessages((prev) => [...prev, { role: 'assistant', content: fullText }]);
       }
     } catch {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: 'â ï¸ Connection error. Check your internet and try again!' },
+        { role: 'assistant', content: 'ð¬ COMMENTO:\nOops, qualcosa Ã¨ andato storto. Riprova!' },
       ]);
     } finally {
       setIsLoading(false);
+      setStreamingText('');
     }
   };
 
@@ -122,10 +147,10 @@ export default function Home() {
       const trimmedLine = line.trim();
       if (!trimmedLine) continue;
 
-      if (trimmedLine.startsWith('ð¯')) {
-        currentSection = { type: 'correction', title: 'Correction', lines: [] };
+      if (trimmedLine.startsWith('âï¸') || trimmedLine.startsWith('ð¯')) {
+        currentSection = { type: 'correction', lines: [] };
         sections.push(currentSection);
-        const rest = trimmedLine.replace(/^ð¯\s*CORRECTION:?\s*/i, '').trim();
+        const rest = trimmedLine.replace(/^[âï¸ð¯]\s*CORR\w+:?\s*/i, '').trim();
         if (rest) currentSection.lines.push(rest);
       } else if (trimmedLine.startsWith('ð')) {
         if (currentSection?.type === 'correction') {
@@ -140,19 +165,19 @@ export default function Home() {
           currentSection.lines.push(trimmedLine);
         }
       } else if (trimmedLine.startsWith('ð¬')) {
-        currentSection = { type: 'response', title: 'Response', lines: [] };
+        currentSection = { type: 'response', lines: [] };
         sections.push(currentSection);
-        const rest = trimmedLine.replace(/^ð¬\s*MY RESPONSE:?\s*/i, '').trim();
+        const rest = trimmedLine.replace(/^ð¬\s*(?:COMMENTO|MY RESPONSE):?\s*/i, '').trim();
         if (rest) currentSection.lines.push(rest);
       } else if (trimmedLine.startsWith('â')) {
-        currentSection = { type: 'question', title: 'Question', lines: [] };
+        currentSection = { type: 'question', lines: [] };
         sections.push(currentSection);
-        const rest = trimmedLine.replace(/^â\s*NEXT QUESTION:?\s*/i, '').trim();
+        const rest = trimmedLine.replace(/^â\s*(?:ORA PROVA|NEXT QUESTION):?\s*/i, '').trim();
         if (rest) currentSection.lines.push(rest);
       } else if (currentSection) {
         currentSection.lines.push(trimmedLine);
       } else {
-        currentSection = { type: 'response', title: '', lines: [trimmedLine] };
+        currentSection = { type: 'response', lines: [trimmedLine] };
         sections.push(currentSection);
       }
     }
@@ -162,34 +187,33 @@ export default function Home() {
     }
 
     return sections.map((section, i) => {
-      const content = section.lines.join('\n');
       if (section.type === 'correction') {
         return (
           <div key={i} style={styles.sectionCorrection}>
             <div style={styles.sectionHeader}>
-              <span style={styles.sectionIcon}>ð¯</span>
-              <span style={styles.sectionLabel}>Correction</span>
+              <span style={styles.sectionIcon}>âï¸</span>
+              <span style={styles.sectionLabel}>Correzione</span>
             </div>
             {section.lines.map((l, j) => {
               if (l.startsWith('ð'))
                 return (
                   <p key={j} style={styles.corrOriginal}>
-                    {l.replace(/^ð\s*YOU SAID:\s*/i, 'ð ')}
+                    {l.replace(/^ð\s*(?:HAI DETTO|YOU SAID):?\s*/i, 'ð ')}
                   </p>
                 );
               if (l.startsWith('â'))
                 return (
                   <p key={j} style={styles.corrFixed}>
-                    {l.replace(/^â\s*CORRECT:\s*/i, 'â ')}
+                    {l.replace(/^â\s*CORR\w+:?\s*/i, 'â ')}
                   </p>
                 );
               if (l.startsWith('ð®ð¹'))
                 return (
                   <p key={j} style={styles.corrItalian}>
-                    {l.replace(/^ð®ð¹\s*ITALIANO:\s*/i, 'ð®ð¹ ')}
+                    {l.replace(/^ð®ð¹\s*(?:TRADUZIONE|ITALIANO):?\s*/i, 'ð®ð¹ ')}
                   </p>
                 );
-              if (l.toLowerCase().includes('perfect') || l.toLowerCase().includes('no correction'))
+              if (l.toLowerCase().includes('perfett') || l.toLowerCase().includes('nessun errore'))
                 return (
                   <p key={j} style={styles.corrPerfect}>
                     â¨ {l}
@@ -206,19 +230,25 @@ export default function Home() {
       }
 
       if (section.type === 'question') {
+        const content = section.lines.join('\n');
         return (
           <div key={i} style={styles.sectionQuestion}>
             <div style={styles.sectionHeader}>
               <span style={styles.sectionIcon}>â</span>
-              <span style={styles.sectionLabel}>Your turn!</span>
+              <span style={styles.sectionLabel}>Ora prova!</span>
             </div>
             <p style={styles.questionText}>{content}</p>
           </div>
         );
       }
 
+      const content = section.lines.join('\n');
       return (
         <div key={i} style={styles.sectionResponse}>
+          <div style={styles.sectionHeader}>
+            <span style={styles.sectionIcon}>ð¬</span>
+            <span style={styles.sectionLabel}>Il tuo prof</span>
+          </div>
           {content && <p style={styles.responseText}>{content}</p>}
         </div>
       );
@@ -236,14 +266,13 @@ export default function Home() {
     <div style={styles.container}>
       <style>{globalCSS}</style>
 
-      {/* Header */}
       <header style={styles.header}>
         <div style={styles.headerInner}>
           <div style={styles.logoArea}>
-            <div style={styles.logoIcon}>â¡</div>
+            <div style={styles.logoIcon}>ð</div>
             <div>
               <h1 style={styles.logoTitle}>SpeakEasy</h1>
-              <p style={styles.logoSub}>English Conversation Tutor</p>
+              <p style={styles.logoSub}>Il tuo prof di inglese AI</p>
             </div>
           </div>
           <div style={styles.statusPill}>
@@ -253,7 +282,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Chat area */}
       <main style={styles.chatArea}>
         <div style={styles.chatInner}>
           {messages.map((msg, i) => (
@@ -278,7 +306,15 @@ export default function Home() {
             </div>
           ))}
 
-          {isLoading && (
+          {isLoading && streamingText && (
+            <div style={{ ...styles.msgRow, justifyContent: 'flex-start' }}>
+              <div style={styles.assistantBubble}>
+                {formatMessage(streamingText)}
+              </div>
+            </div>
+          )}
+
+          {isLoading && !streamingText && (
             <div style={{ ...styles.msgRow, justifyContent: 'flex-start' }}>
               <div style={styles.assistantBubble}>
                 <div style={styles.typingDots}>
@@ -294,7 +330,6 @@ export default function Home() {
         </div>
       </main>
 
-      {/* Input bar */}
       <footer style={styles.inputBar}>
         <div style={styles.inputInner}>
           <div style={styles.inputRow}>
@@ -306,7 +341,7 @@ export default function Home() {
                 autoResize();
               }}
               onKeyDown={handleKeyDown}
-              placeholder="Type or speak in English..."
+              placeholder="Scrivi in inglese..."
               rows={1}
               style={styles.textarea}
             />
@@ -318,7 +353,7 @@ export default function Home() {
                   ...styles.micBtn,
                   ...(isListening ? styles.micBtnActive : {}),
                 }}
-                aria-label={isListening ? 'Stop listening' : 'Start voice input'}
+                aria-label={isListening ? 'Stop' : 'Parla'}
               >
                 {isListening ? (
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -342,7 +377,7 @@ export default function Home() {
                 ...styles.sendBtn,
                 opacity: !input.trim() || isLoading ? 0.4 : 1,
               }}
-              aria-label="Send message"
+              aria-label="Invia"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="22" y1="2" x2="11" y2="13" />
@@ -354,7 +389,7 @@ export default function Home() {
           {isListening && (
             <div style={styles.listeningBar}>
               <div style={styles.pulseRing} />
-              <span style={styles.listeningText}>ðï¸ Listening... speak in English</span>
+              <span style={styles.listeningText}>ðï¸ Sto ascoltando... parla in inglese</span>
             </div>
           )}
         </div>
@@ -368,31 +403,26 @@ const globalCSS = `
   html, body { height: 100%; overflow: hidden; }
   body {
     font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    background: #0a0f1c;
+    background: #0f1729;
     color: #e8ecf4;
     -webkit-font-smoothing: antialiased;
   }
   textarea:focus { outline: none; }
   button { cursor: pointer; border: none; background: none; }
-  
+
   @keyframes dotPulse {
     0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
     30% { opacity: 1; transform: scale(1); }
   }
-  
+
   @keyframes pulseAnim {
     0% { transform: scale(1); opacity: 0.6; }
     100% { transform: scale(2.5); opacity: 0; }
   }
 
   @keyframes fadeSlideUp {
-    from { opacity: 0; transform: translateY(12px); }
+    from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
-  }
-
-  @keyframes shimmer {
-    0% { background-position: -200% center; }
-    100% { background-position: 200% center; }
   }
 `;
 
@@ -401,22 +431,21 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     height: '100dvh',
-    maxWidth: 520,
+    maxWidth: 540,
     margin: '0 auto',
-    background: 'linear-gradient(180deg, #0d1222 0%, #0a0f1c 100%)',
+    background: '#0f1729',
     position: 'relative',
   },
 
-  // Header
   header: {
     position: 'sticky',
     top: 0,
     zIndex: 100,
-    background: 'rgba(13,18,34,0.85)',
+    background: 'rgba(15,23,41,0.92)',
     backdropFilter: 'blur(20px)',
     WebkitBackdropFilter: 'blur(20px)',
-    borderBottom: '1px solid rgba(255,255,255,0.06)',
-    padding: '12px 16px',
+    borderBottom: '1px solid rgba(255,255,255,0.08)',
+    padding: '14px 18px',
   },
   headerInner: {
     display: 'flex',
@@ -426,64 +455,60 @@ const styles = {
   logoArea: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
   logoIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    background: 'linear-gradient(135deg, #6C63FF 0%, #4ECDC4 100%)',
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    background: 'linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: 18,
+    fontSize: 20,
   },
   logoTitle: {
     fontFamily: "'Playfair Display', serif",
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 800,
-    background: 'linear-gradient(135deg, #fff 0%, #a5b4fc 100%)',
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
+    color: '#fff',
     lineHeight: 1.1,
   },
   logoSub: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.4)',
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.45)',
     fontWeight: 500,
-    letterSpacing: '0.02em',
   },
   statusPill: {
     display: 'flex',
     alignItems: 'center',
     gap: 6,
-    background: 'rgba(78,205,196,0.1)',
-    border: '1px solid rgba(78,205,196,0.2)',
+    background: 'rgba(34,197,94,0.1)',
+    border: '1px solid rgba(34,197,94,0.25)',
     borderRadius: 20,
-    padding: '4px 12px',
+    padding: '5px 14px',
     fontSize: 12,
-    color: '#4ECDC4',
-    fontWeight: 500,
+    color: '#22C55E',
+    fontWeight: 600,
   },
   statusDot: {
-    width: 6,
-    height: 6,
+    width: 7,
+    height: 7,
     borderRadius: '50%',
-    background: '#4ECDC4',
-    boxShadow: '0 0 8px rgba(78,205,196,0.6)',
+    background: '#22C55E',
+    boxShadow: '0 0 8px rgba(34,197,94,0.6)',
   },
 
-  // Chat
   chatArea: {
     flex: 1,
     overflow: 'auto',
-    padding: '16px 12px',
+    padding: '18px 14px',
     WebkitOverflowScrolling: 'touch',
   },
   chatInner: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 12,
+    gap: 14,
   },
   msgRow: {
     display: 'flex',
@@ -491,10 +516,10 @@ const styles = {
   },
   userBubble: {
     maxWidth: '82%',
-    background: 'linear-gradient(135deg, #6C63FF 0%, #5B54E0 100%)',
+    background: 'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)',
     borderRadius: '20px 20px 6px 20px',
-    padding: '12px 16px',
-    boxShadow: '0 4px 20px rgba(108,99,255,0.25)',
+    padding: '13px 18px',
+    boxShadow: '0 2px 12px rgba(59,130,246,0.25)',
   },
   userText: {
     fontSize: 15,
@@ -503,107 +528,103 @@ const styles = {
     wordBreak: 'break-word',
   },
   assistantBubble: {
-    maxWidth: '88%',
-    background: 'rgba(255,255,255,0.04)',
-    border: '1px solid rgba(255,255,255,0.08)',
+    maxWidth: '90%',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: '20px 20px 20px 6px',
+    padding: '16px 18px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+  },
+
+  sectionCorrection: {
+    background: 'rgba(251,191,36,0.08)',
+    border: '1px solid rgba(251,191,36,0.2)',
+    borderRadius: 14,
     padding: '14px 16px',
     display: 'flex',
     flexDirection: 'column',
-    gap: 10,
-  },
-
-  // Correction section
-  sectionCorrection: {
-    background: 'rgba(255,183,77,0.06)',
-    border: '1px solid rgba(255,183,77,0.15)',
-    borderRadius: 14,
-    padding: '12px 14px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 6,
+    gap: 8,
   },
   sectionHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
     marginBottom: 4,
   },
   sectionIcon: {
-    fontSize: 14,
+    fontSize: 16,
   },
   sectionLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: 700,
     textTransform: 'uppercase',
-    letterSpacing: '0.08em',
-    color: 'rgba(255,255,255,0.5)',
+    letterSpacing: '0.06em',
+    color: 'rgba(255,255,255,0.55)',
   },
   corrOriginal: {
-    fontSize: 13.5,
-    color: 'rgba(255,120,120,0.85)',
-    lineHeight: 1.5,
+    fontSize: 14,
+    color: 'rgba(248,113,113,0.9)',
+    lineHeight: 1.6,
     textDecoration: 'line-through',
-    textDecorationColor: 'rgba(255,120,120,0.3)',
+    textDecorationColor: 'rgba(248,113,113,0.3)',
   },
   corrFixed: {
-    fontSize: 13.5,
-    color: '#4ECDC4',
-    lineHeight: 1.5,
+    fontSize: 14,
+    color: '#34D399',
+    lineHeight: 1.6,
     fontWeight: 600,
   },
   corrItalian: {
-    fontSize: 13,
-    color: 'rgba(165,180,252,0.8)',
-    lineHeight: 1.5,
+    fontSize: 13.5,
+    color: 'rgba(165,180,252,0.85)',
+    lineHeight: 1.6,
     fontStyle: 'italic',
   },
   corrPerfect: {
     fontSize: 14,
-    color: '#4ECDC4',
+    color: '#34D399',
     fontWeight: 600,
-    lineHeight: 1.5,
+    lineHeight: 1.6,
   },
   corrLine: {
-    fontSize: 13.5,
-    color: 'rgba(255,255,255,0.7)',
-    lineHeight: 1.5,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.75)',
+    lineHeight: 1.6,
   },
 
-  // Question section
   sectionQuestion: {
-    background: 'linear-gradient(135deg, rgba(108,99,255,0.08), rgba(78,205,196,0.08))',
-    border: '1px solid rgba(108,99,255,0.15)',
+    background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(139,92,246,0.1))',
+    border: '1px solid rgba(59,130,246,0.2)',
     borderRadius: 14,
-    padding: '12px 14px',
+    padding: '14px 16px',
   },
   questionText: {
     fontSize: 15,
     color: '#e8ecf4',
-    lineHeight: 1.55,
+    lineHeight: 1.6,
     fontWeight: 500,
   },
 
-  // Response section
   sectionResponse: {
     padding: '0 2px',
   },
   responseText: {
-    fontSize: 14.5,
-    color: 'rgba(255,255,255,0.82)',
-    lineHeight: 1.6,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.85)',
+    lineHeight: 1.7,
   },
   plainText: {
-    fontSize: 14.5,
-    color: 'rgba(255,255,255,0.82)',
-    lineHeight: 1.6,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.85)',
+    lineHeight: 1.7,
   },
 
-  // Typing dots
   typingDots: {
     display: 'flex',
-    gap: 5,
-    padding: '4px 0',
+    gap: 6,
+    padding: '6px 0',
   },
   dot: {
     width: 8,
@@ -614,15 +635,14 @@ const styles = {
     display: 'inline-block',
   },
 
-  // Input bar
   inputBar: {
     position: 'sticky',
     bottom: 0,
-    background: 'rgba(13,18,34,0.9)',
+    background: 'rgba(15,23,41,0.95)',
     backdropFilter: 'blur(20px)',
     WebkitBackdropFilter: 'blur(20px)',
-    borderTop: '1px solid rgba(255,255,255,0.06)',
-    padding: '10px 12px env(safe-area-inset-bottom, 10px)',
+    borderTop: '1px solid rgba(255,255,255,0.08)',
+    padding: '12px 14px env(safe-area-inset-bottom, 12px)',
   },
   inputInner: {
     display: 'flex',
@@ -633,10 +653,10 @@ const styles = {
     display: 'flex',
     alignItems: 'flex-end',
     gap: 8,
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 18,
-    padding: '6px 6px 6px 16px',
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: 20,
+    padding: '8px 8px 8px 18px',
   },
   textarea: {
     flex: 1,
@@ -651,8 +671,8 @@ const styles = {
     maxHeight: 120,
   },
   micBtn: {
-    width: 40,
-    height: 40,
+    width: 42,
+    height: 42,
     borderRadius: 14,
     display: 'flex',
     alignItems: 'center',
@@ -662,15 +682,15 @@ const styles = {
     flexShrink: 0,
   },
   micBtnActive: {
-    background: 'rgba(255,77,77,0.15)',
-    color: '#ff4d4d',
-    boxShadow: '0 0 20px rgba(255,77,77,0.2)',
+    background: 'rgba(239,68,68,0.15)',
+    color: '#EF4444',
+    boxShadow: '0 0 20px rgba(239,68,68,0.2)',
   },
   sendBtn: {
-    width: 40,
-    height: 40,
+    width: 42,
+    height: 42,
     borderRadius: 14,
-    background: 'linear-gradient(135deg, #6C63FF 0%, #4ECDC4 100%)',
+    background: 'linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -679,21 +699,20 @@ const styles = {
     flexShrink: 0,
   },
 
-  // Listening indicator
   listeningBar: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    padding: '4px 0',
+    padding: '6px 0',
   },
   pulseRing: {
     width: 10,
     height: 10,
     borderRadius: '50%',
-    background: '#ff4d4d',
+    background: '#EF4444',
     position: 'relative',
-    boxShadow: '0 0 0 0 rgba(255,77,77,0.6)',
+    boxShadow: '0 0 0 0 rgba(239,68,68,0.6)',
     animation: 'pulseAnim 1.5s infinite',
   },
   listeningText: {

@@ -2,36 +2,35 @@ export async function POST(request) {
   try {
     const { messages } = await request.json();
 
-    const systemPrompt = `You are SpeakEasy, a friendly, patient, and enthusiastic native English teacher having a real-time conversation with an Italian student who is learning English.
+    const systemPrompt = `Sei SpeakEasy, un insegnante di inglese madrelingua che parla SEMPRE in italiano con il suo studente. Sei simpatico, paziente e incoraggiante.
 
-YOUR BEHAVIOR:
-1. The student will speak/write in English (possibly with errors). 
-2. For EVERY student message, you MUST respond with this EXACT structure using these markers:
+COME FUNZIONA:
+1. Lo studente scrive/parla in inglese (magari con errori)
+2. Tu rispondi SEMPRE in ITALIANO, usando questo formato ESATTO:
 
-ð¯ CORRECTION:
-[If there are errors, show the corrected version of what they said. If no errors, write "Perfect! No corrections needed! â¨"]
+âï¸ CORREZIONE:
+[Se ci sono errori, mostra la frase corretta in inglese. Se non ci sono errori scrivi "Perfetto! Nessun errore! â¨"]
 
-ð YOU SAID: "[their original text]"
-â CORRECT: "[corrected version]"
-ð®ð¹ ITALIANO: "[Italian translation of the correct version]"
+ð HAI DETTO: "[la frase originale dello studente]"
+â CORRETTO: "[la versione corretta in inglese]"
+ð®ð¹ TRADUZIONE: "[traduzione italiana della frase corretta]"
 
-ð¬ MY RESPONSE:
-[Your natural, engaging response to what they said â keep it conversational, fun, warm. React to their content genuinely. 2-3 sentences max.]
+ð¬ COMMENTO:
+[Il tuo commento in ITALIANO â rispondi al contenuto di quello che ha detto, sii conversazionale e simpatico. 2-3 frasi max. Se ha fatto errori, spiega brevemente in italiano PERCHÃ Ã¨ sbagliato e la regola grammaticale.]
 
-â NEXT QUESTION:
-[Ask a follow-up question related to their topic OR introduce a fun new angle. Make it specific and interesting, not generic. Keep it at their level.]
+â ORA PROVA:
+[Fai una domanda IN INGLESE a cui lo studente deve rispondere. Metti tra parentesi la traduzione italiana. Esempio: "What did you eat for lunch today? (Cosa hai mangiato a pranzo oggi?)"]
 
-RULES:
-- Always follow this exact format with the emoji markers
-- Be encouraging â celebrate good English, gently correct mistakes
-- Keep energy HIGH â use enthusiasm, humor, cultural references
-- Match their topic interest â if they want to talk about food, movies, travel, stay on it
-- Gradually increase complexity as they improve
-- If their English is very basic, keep questions simple
-- Sprinkle in useful idioms and phrasal verbs naturally
-- If they write in Italian, gently redirect to English but help them translate what they wanted to say
-- Be like a fun friend who happens to be a great teacher, NOT a boring textbook
-- Keep responses concise â this is a fast-paced chat, not a lecture`;
+REGOLE IMPORTANTI:
+- Rispondi SEMPRE in italiano tranne per le frasi di esempio in inglese
+- Usa SEMPRE questo formato con le emoji
+- Sii incoraggiante â festeggia quando scrive bene, correggi con gentilezza
+- Spiega gli errori grammaticali in modo semplice e chiaro in italiano
+- Se lo studente scrive in italiano, rispondi comunque in italiano ma invitalo gentilmente a provare in inglese
+- Suggerisci modi di dire e frasi utili in inglese con traduzione
+- Adatta la difficoltÃ  al livello dello studente
+- Sii come un amico simpatico che Ã¨ anche un bravo prof, NON un libro di testo noioso
+- Risposte concise â questa Ã¨ una chat veloce, non una lezione`;
 
     const response = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
@@ -45,8 +44,9 @@ RULES:
           { role: 'system', content: systemPrompt },
           ...messages,
         ],
-        temperature: 0.8,
-        max_tokens: 800,
+        stream: true,
+        temperature: 0.7,
+        max_tokens: 600,
       }),
     });
 
@@ -56,10 +56,51 @@ RULES:
       return Response.json({ error: 'API request failed' }, { status: 500 });
     }
 
-    const data = await response.json();
-    const reply = data.choices[0].message.content;
+    // Stream the response
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      async start(controller) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
 
-    return Response.json({ reply });
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6);
+                if (data === '[DONE]') {
+                  controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                  break;
+                }
+                try {
+                  const parsed = JSON.parse(data);
+                  const content = parsed.choices?.[0]?.delta?.content;
+                  if (content) {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
+                  }
+                } catch {}
+              }
+            }
+          }
+        } finally {
+          controller.close();
+        }
+      }
+    });
+
+    return new Response(readable, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
   } catch (error) {
     console.error('Server error:', error);
     return Response.json({ error: 'Internal server error' }, { status: 500 });
